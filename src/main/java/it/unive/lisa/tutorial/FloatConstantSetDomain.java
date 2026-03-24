@@ -2,17 +2,24 @@ package it.unive.lisa.tutorial;
 
 import java.util.Set;
 
-import it.unive.lisa.analysis.nonrelational.value.BaseNonRelationalTypeDomain;
-import it.unive.lisa.type.Type;
+import it.unive.lisa.analysis.SemanticException;
+import it.unive.lisa.analysis.SemanticOracle;
+import it.unive.lisa.analysis.nonrelational.value.BaseNonRelationalValueDomain;
+import it.unive.lisa.program.cfg.ProgramPoint;
+import it.unive.lisa.symbolic.value.Constant;
+import it.unive.lisa.symbolic.value.operator.binary.BinaryOperator;
+import it.unive.lisa.symbolic.value.operator.unary.UnaryOperator;
+import it.unive.lisa.util.representation.StringRepresentation;
 import it.unive.lisa.util.representation.StructuredRepresentation;
 
 import java.util.HashSet;
+import java.util.Objects;
 
 
-public class FloatConstantSetDomain implements BaseNonRelationalTypeDomain<FloatConstantSetDomain> {
+public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<FloatConstantSetDomain> {
 
     public static final int N = 3; //max number of values in the set
-    public static final FloatConstantSetDomain TOP = new FloatConstantSetDomain(null);
+    public static final FloatConstantSetDomain TOP = new FloatConstantSetDomain((Set<Float>)null);
     public static final FloatConstantSetDomain BOTTOM = new FloatConstantSetDomain(Set.of());
 
     private final Set<Float> values;
@@ -20,8 +27,18 @@ public class FloatConstantSetDomain implements BaseNonRelationalTypeDomain<Float
     public FloatConstantSetDomain(Set<Float> values) {
         if(values != null && values.size() > N) {
             this.values = null; // if bigger than n, TOP
+        } else if(values == null) {
+            this.values = null; // TOP
         } else {
             this.values = Set.copyOf(values);
+        }
+    }
+    
+    public FloatConstantSetDomain(Float value) {
+        if(value == null) {
+            this.values = null; // TOP
+        } else {
+            this.values = Set.of(value);
         }
     }
 
@@ -47,13 +64,18 @@ public class FloatConstantSetDomain implements BaseNonRelationalTypeDomain<Float
         Set<Float> intersection = new HashSet<>(this.values);
         intersection.retainAll(other.values);
 
+        if (intersection.isEmpty()) return BOTTOM;
+        
         return new FloatConstantSetDomain(intersection);
     }
 
     @Override
     public boolean lessOrEqualAux(FloatConstantSetDomain other) {
-        if (this.isBottom() || other.isTop()) return true;
-        if (this.isTop() || other.isBottom()) return false;
+        if(this.isTop()) return other.isTop();
+        if(other.isTop()) return true;
+        if(this.isBottom()) return true;
+        if(other.isBottom()) return false;
+
         return other.values.containsAll(this.values);
     }
 
@@ -79,14 +101,57 @@ public class FloatConstantSetDomain implements BaseNonRelationalTypeDomain<Float
 
     @Override
     public StructuredRepresentation representation() {
-        return null;
+        if(this.isTop()) return new StringRepresentation("TOP");
+        if(this.isBottom()) return new StringRepresentation("BOTTOM");
+        return new StringRepresentation(values.toString());
     }
 
     @Override
-    public Set<Type> getRuntimeTypes() {
-        throw new UnsupportedOperationException("Unimplemented method 'getRuntimeTypes'");
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof FloatConstantSetDomain other)) return false;
+        return Objects.equals(this.values, other.values);
     }
 
-    
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(values);
+    }
+
+    // logic for evaluating expressions below
+
+    //TODO
+    @Override
+    public FloatConstantSetDomain evalNonNullConstant(
+        Constant constant,
+        ProgramPoint pp,
+        SemanticOracle oracle
+    ) throws SemanticException
+    {
+        return this;
+    }
+  
+    @Override
+    public FloatConstantSetDomain evalUnaryExpression(
+        UnaryOperator operator,
+        FloatConstantSetDomain arg,
+        ProgramPoint pp,
+        SemanticOracle oracle)
+        throws SemanticException
+    {
+        return this;
+    }
+
+    @Override
+    public FloatConstantSetDomain evalBinaryExpression(
+        BinaryOperator operator,
+        FloatConstantSetDomain left,
+        FloatConstantSetDomain right,
+        ProgramPoint pp,
+        SemanticOracle oracle)
+        throws SemanticException
+        { 
+            return this;
+        }
     
 }
