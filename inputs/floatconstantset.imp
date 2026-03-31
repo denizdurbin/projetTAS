@@ -1,0 +1,94 @@
+class floatconstantset {
+
+    basic() {
+        def a = 1.0;
+        def b = 2.5;
+        def c = a + b;
+        def d = a * b;
+        def e = b - a;
+        def f = a / b;
+        def g = -a;
+    }
+
+    branches(cond) {
+        def x = 1.0;
+        def y = 2.0;
+        if (cond > 0)
+            x = 3.0;
+        else
+            y = 4.0;
+        def z = x + y;
+    }
+
+    overflow_add() {
+        def big = 340000000000000000000000000000000000000.0;
+        def result = big + big;
+    }
+
+    overflow_mul() {
+        def a = 100000000000000000000.0;
+        def b = a * a;
+    }
+
+    nan_goes_top() {
+        def zero = 0.0;
+        def bad = zero / zero;
+    }
+
+    infinity_stays() {
+        def x = 1.0;
+        def zero = 0.0;
+        def inf = x / zero;
+        def still_inf = inf + 1.0;
+    }
+
+    infinity_arithmetic() {
+        def big = 340000000000000000000000000000000000000.0;
+        def inf = big * 2.0;
+        def neg_inf = -inf;
+        def also_nan = inf + neg_inf;
+    }
+
+    set_growth(cond) {
+        def x = 1.0;
+        if (cond > 0)
+            x = 2.0;
+        else
+            x = 3.0;
+        def y = 1.0;
+        if (cond > 0)
+            y = 4.0;
+        else
+            y = 5.0;
+        def z = x + y;
+    }
+
+    loop_to_top(n) {
+        def i = 0.0;
+        while (i < n) {
+            i = i + 1.0;
+        }
+    }
+
+    overflow_in_branch(cond) {
+        def x = 100000000000000000000.0;
+        def y = 2.0;
+        if (cond > 0)
+            y = x * x;
+        def z = y + 1.0;
+    }
+
+    neg_infinity() {
+        def x = -340000000000000000000000000000000000000.0;
+        def y = x - 340000000000000000000000000000000000000.0;
+    }
+
+    top_times_zero() {
+        def x = 0.0;
+        while (x < 10.0) {
+            x = x + 1.0;
+        }
+        def zero = 0.0;
+        def y = x * zero;
+    }
+}

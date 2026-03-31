@@ -2,12 +2,20 @@ package it.unive.lisa.tutorial;
 
 import java.util.Set;
 
+import com.fasterxml.jackson.databind.JsonSerializable.Base;
+
 import it.unive.lisa.analysis.SemanticException;
 import it.unive.lisa.analysis.SemanticOracle;
 import it.unive.lisa.analysis.nonrelational.value.BaseNonRelationalValueDomain;
 import it.unive.lisa.program.cfg.ProgramPoint;
 import it.unive.lisa.symbolic.value.Constant;
+import it.unive.lisa.symbolic.value.operator.AdditionOperator;
+import it.unive.lisa.symbolic.value.operator.ArithmeticOperator;
+import it.unive.lisa.symbolic.value.operator.DivisionOperator;
+import it.unive.lisa.symbolic.value.operator.MultiplicationOperator;
+import it.unive.lisa.symbolic.value.operator.SubtractionOperator;
 import it.unive.lisa.symbolic.value.operator.binary.BinaryOperator;
+import it.unive.lisa.symbolic.value.operator.unary.NumericNegation;
 import it.unive.lisa.symbolic.value.operator.unary.UnaryOperator;
 import it.unive.lisa.util.representation.StringRepresentation;
 import it.unive.lisa.util.representation.StructuredRepresentation;
@@ -101,8 +109,8 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
 
     @Override
     public StructuredRepresentation representation() {
-        if(this.isTop()) return new StringRepresentation("TOP");
-        if(this.isBottom()) return new StringRepresentation("BOTTOM");
+        if(this.isTop()) return new StringRepresentation("T");
+        if(this.isBottom()) return new StringRepresentation("_|_");
         return new StringRepresentation(values.toString());
     }
 
@@ -128,7 +136,11 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
         SemanticOracle oracle
     ) throws SemanticException
     {
-        return this;
+        Object value = constant.getValue();
+        if (value instanceof Float) {
+            return new FloatConstantSetDomain((Float) value);
+        }
+        return BaseNonRelationalValueDomain.super.evalNonNullConstant(constant, pp, oracle);
     }
   
     @Override
@@ -139,7 +151,17 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
         SemanticOracle oracle)
         throws SemanticException
     {
-        return this;
+        if (operator instanceof NumericNegation) {
+            if (arg.isTop()) return TOP;
+            if (arg.isBottom()) return BOTTOM;
+
+            Set<Float> negatedValues = new HashSet<>();
+            for (Float v : arg.values) {
+                negatedValues.add(-v);
+            }
+            return new FloatConstantSetDomain(negatedValues);
+        }
+        return arg.top();
     }
 
     @Override
@@ -150,8 +172,46 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
         ProgramPoint pp,
         SemanticOracle oracle)
         throws SemanticException
-        { 
-            return this;
+    {
+        if (operator instanceof ArithmeticOperator) {
+            if (left.isBottom() || right.isBottom()) return BOTTOM;
+            if (operator instanceof MultiplicationOperator
+                    && ((left.isTop() && isSingletonZero(right))
+                            || (right.isTop() && isSingletonZero(left))))
+                return new FloatConstantSetDomain(0.0f);
+            if (left.isTop() || right.isTop()) return TOP;
+
+            HashSet<Float> results = new HashSet<>();
+            for (Float l : left.values) {
+                for (Float r : right.values) {
+                    float result;
+                    if (operator instanceof AdditionOperator)
+                        result = l + r;
+                    else if (operator instanceof SubtractionOperator)
+                        result = l - r;
+                    else if (operator instanceof MultiplicationOperator)
+                        result = l * r;
+                    else if (operator instanceof DivisionOperator)
+                        result = l / r;
+                    else
+                        return TOP;
+
+                    if (Float.isNaN(result)) return TOP;
+                    results.add(result);
+                }
+            }
+
+            if (results.size() > N) return TOP;
+            return new FloatConstantSetDomain(results);
         }
-    
+        return BaseNonRelationalValueDomain.super.evalBinaryExpression(operator, left, right, pp, oracle);
+    }
+
+    private static boolean isSingletonZero(FloatConstantSetDomain domain) {
+        if (domain == null || domain.isTop() || domain.isBottom() || domain.values.size() != 1)
+            return false;
+
+        Float value = domain.values.iterator().next();
+        return value != null && value == 0.0f;
+    }
 }
