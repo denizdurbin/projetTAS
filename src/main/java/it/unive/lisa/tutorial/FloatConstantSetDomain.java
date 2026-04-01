@@ -2,19 +2,22 @@ package it.unive.lisa.tutorial;
 
 import java.util.Set;
 
-import com.fasterxml.jackson.databind.JsonSerializable.Base;
-
 import it.unive.lisa.analysis.SemanticException;
 import it.unive.lisa.analysis.SemanticOracle;
+import it.unive.lisa.analysis.lattices.Satisfiability;
 import it.unive.lisa.analysis.nonrelational.value.BaseNonRelationalValueDomain;
+import it.unive.lisa.analysis.nonrelational.value.ValueEnvironment;
 import it.unive.lisa.program.cfg.ProgramPoint;
 import it.unive.lisa.symbolic.value.Constant;
+import it.unive.lisa.symbolic.value.Identifier;
+import it.unive.lisa.symbolic.value.ValueExpression;
 import it.unive.lisa.symbolic.value.operator.AdditionOperator;
 import it.unive.lisa.symbolic.value.operator.ArithmeticOperator;
 import it.unive.lisa.symbolic.value.operator.DivisionOperator;
 import it.unive.lisa.symbolic.value.operator.MultiplicationOperator;
 import it.unive.lisa.symbolic.value.operator.SubtractionOperator;
 import it.unive.lisa.symbolic.value.operator.binary.BinaryOperator;
+import it.unive.lisa.symbolic.value.operator.binary.ComparisonLt;
 import it.unive.lisa.symbolic.value.operator.unary.NumericNegation;
 import it.unive.lisa.symbolic.value.operator.unary.UnaryOperator;
 import it.unive.lisa.util.representation.StringRepresentation;
@@ -131,10 +134,10 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
     //TODO
     @Override
     public FloatConstantSetDomain evalNonNullConstant(
-        Constant constant,
-        ProgramPoint pp,
-        SemanticOracle oracle
-    ) throws SemanticException
+            Constant constant,
+            ProgramPoint pp,
+            SemanticOracle oracle)
+            throws SemanticException
     {
         Object value = constant.getValue();
         if (value instanceof Float) {
@@ -145,11 +148,11 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
   
     @Override
     public FloatConstantSetDomain evalUnaryExpression(
-        UnaryOperator operator,
-        FloatConstantSetDomain arg,
-        ProgramPoint pp,
-        SemanticOracle oracle)
-        throws SemanticException
+            UnaryOperator operator,
+            FloatConstantSetDomain arg,
+            ProgramPoint pp,
+            SemanticOracle oracle)
+            throws SemanticException
     {
         if (operator instanceof NumericNegation) {
             if (arg.isTop()) return TOP;
@@ -166,19 +169,15 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
 
     @Override
     public FloatConstantSetDomain evalBinaryExpression(
-        BinaryOperator operator,
-        FloatConstantSetDomain left,
-        FloatConstantSetDomain right,
-        ProgramPoint pp,
-        SemanticOracle oracle)
-        throws SemanticException
+            BinaryOperator operator,
+            FloatConstantSetDomain left,
+            FloatConstantSetDomain right,
+            ProgramPoint pp,
+            SemanticOracle oracle)
+            throws SemanticException
     {
         if (operator instanceof ArithmeticOperator) {
             if (left.isBottom() || right.isBottom()) return BOTTOM;
-            if (operator instanceof MultiplicationOperator
-                    && ((left.isTop() && isSingletonZero(right))
-                            || (right.isTop() && isSingletonZero(left))))
-                return new FloatConstantSetDomain(0.0f);
             if (left.isTop() || right.isTop()) return TOP;
 
             HashSet<Float> results = new HashSet<>();
@@ -207,11 +206,99 @@ public class FloatConstantSetDomain implements BaseNonRelationalValueDomain<Floa
         return BaseNonRelationalValueDomain.super.evalBinaryExpression(operator, left, right, pp, oracle);
     }
 
-    private static boolean isSingletonZero(FloatConstantSetDomain domain) {
-        if (domain == null || domain.isTop() || domain.isBottom() || domain.values.size() != 1)
-            return false;
+    @Override
+    public Satisfiability satisfiesBinaryExpression(
+            BinaryOperator operator,
+            FloatConstantSetDomain left,
+            FloatConstantSetDomain right,
+            ProgramPoint pp,
+            SemanticOracle oracle)
+            throws SemanticException
+    {
+        if (left.isTop() || right.isTop())
+            return Satisfiability.UNKNOWN;
+        if (left.isBottom() || right.isBottom())
+            return Satisfiability.BOTTOM;
 
-        Float value = domain.values.iterator().next();
-        return value != null && value == 0.0f;
+        if (operator instanceof ComparisonLt) {
+            boolean allTrue = true;
+            boolean allFalse = true;
+            for (Float l : left.values)
+                for (Float r : right.values) {
+                    if (l < r) allFalse = false;
+                    else allTrue = false;
+                }
+            if (allTrue) return Satisfiability.SATISFIED;
+            if (allFalse) return Satisfiability.NOT_SATISFIED;
+            return Satisfiability.UNKNOWN;
+        }
+
+        return BaseNonRelationalValueDomain.super.satisfiesBinaryExpression(operator, left, right, pp, oracle);
+    }
+
+    @Override
+    public ValueEnvironment<FloatConstantSetDomain> assumeBinaryExpression(
+            ValueEnvironment<FloatConstantSetDomain> environment,
+            BinaryOperator operator,
+            ValueExpression left,
+            ValueExpression right,
+            ProgramPoint src,
+            ProgramPoint dest,
+            SemanticOracle oracle)
+            throws SemanticException
+    {
+        if (operator instanceof ComparisonLt && left instanceof Identifier && right instanceof Constant) {
+            Identifier x = (Identifier) left;
+            Constant c = (Constant) right;
+            if (c.getValue() instanceof Float) {
+                FloatConstantSetDomain xVals = environment.getState(x);
+                if (!xVals.isTop() && !xVals.isBottom()) {
+                    Set<Float> filtered = new HashSet<>();
+                    for (Float v : xVals.values)
+                        if (v < (Float) c.getValue()) filtered.add(v);
+                    if (filtered.isEmpty())
+                        return environment.bottom();
+                    environment = environment.putState(x, new FloatConstantSetDomain(filtered));
+                }
+            }
+        }
+
+        if (operator instanceof ComparisonLt && left instanceof Constant && right instanceof Identifier) {
+            Constant c = (Constant) left;
+            Identifier x = (Identifier) right;
+            if (c.getValue() instanceof Float) {
+                FloatConstantSetDomain xVals = environment.getState(x);
+                if (!xVals.isTop() && !xVals.isBottom()) {
+                    Set<Float> filtered = new HashSet<>();
+                    for (Float v : xVals.values)
+                        if ((Float) c.getValue() < v) filtered.add(v);
+                    if (filtered.isEmpty())
+                        return environment.bottom();
+                    environment = environment.putState(x, new FloatConstantSetDomain(filtered));
+                }
+            }
+        }
+
+        if (operator instanceof ComparisonLt && left instanceof Identifier && right instanceof Identifier) {
+            Identifier x = (Identifier) left;
+            Identifier y = (Identifier) right;
+            FloatConstantSetDomain xVals = environment.getState(x);
+            FloatConstantSetDomain yVals = environment.getState(y);
+            if (!xVals.isTop() && !xVals.isBottom() && !yVals.isTop() && !yVals.isBottom()) {
+                Set<Float> xFiltered = new HashSet<>();
+                Set<Float> yFiltered = new HashSet<>();
+                for (Float xv : xVals.values)
+                    for (Float yv : yVals.values)
+                        if (xv < yv) {
+                            xFiltered.add(xv);
+                            yFiltered.add(yv);
+                        }
+                if (xFiltered.isEmpty() || yFiltered.isEmpty())
+                    return environment.bottom();
+                environment = environment.putState(x, new FloatConstantSetDomain(xFiltered));
+                environment = environment.putState(y, new FloatConstantSetDomain(yFiltered));
+            }
+        }
+        return environment;
     }
 }
