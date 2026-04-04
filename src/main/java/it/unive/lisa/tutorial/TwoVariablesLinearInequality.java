@@ -1,6 +1,8 @@
 package it.unive.lisa.tutorial;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -84,7 +86,8 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
                 remaining.add(ineq);
             }
         }
-        return new TwoVariablesLinearInequality(remaining);}
+        return new TwoVariablesLinearInequality(remaining);
+    }
 
     @Override
     public Satisfiability satisfies(ValueExpression expression, ProgramPoint pp, SemanticOracle oracle)
@@ -112,14 +115,62 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
     }
     @Override
     public boolean lessOrEqual(TwoVariablesLinearInequality other) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'lessOrEqual'");
+        if (isBottom() || other.isTop()) return true;
+        if (isTop()) return other.isTop();
+        if (other.isBottom()) return false;
+
+        for (Inequality ineq : other.inequalities) {
+            if (!this.implies(ineq)) return false;
+        }
+        return true;
     }
+
     @Override
     public TwoVariablesLinearInequality lub(TwoVariablesLinearInequality other) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'lub'");
+        if (isTop() || other.isTop()) return top();
+        if (isBottom()) return other;
+        if (other.isBottom()) return this;
+
+        Map<String, Inequality> thisMap = new HashMap<>();
+        for (Inequality ineq : this.inequalities) {
+            thisMap.merge(ineq.getKey(), ineq, (old, nw) -> old.getC() <= nw.getC() ? old : nw);
+        }
+
+        Map<String, Inequality> otherMap = new HashMap<>();
+        for (Inequality ineq : other.inequalities) {
+            otherMap.merge(ineq.getKey(), ineq, (old, nw) -> old.getC() <= nw.getC() ? old : nw);
+        }
+
+        Set<Inequality> result = new HashSet<>();
+        for (Map.Entry<String, Inequality> entry : thisMap.entrySet()) {
+            Inequality otherIneq = otherMap.get(entry.getKey());
+            if (otherIneq != null) {
+                Inequality thisIneq = entry.getValue();
+                double maxC = Math.max(thisIneq.getC(), otherIneq.getC());
+                result.add(new Inequality(thisIneq.getA(), thisIneq.getX(),
+                        thisIneq.getB(), thisIneq.getY(), maxC));
+            }
+        }
+
+        if (result.isEmpty()) return top();
+        return new TwoVariablesLinearInequality(result);
     }
+
+    @Override
+    public TwoVariablesLinearInequality widening(TwoVariablesLinearInequality other) throws SemanticException {
+        if (isBottom()) return other;
+        if (other.isBottom()) return this;
+        if (isTop() || other.isTop()) return top();
+
+        Set<Inequality> stable = new HashSet<>();
+        for (Inequality ineq : this.inequalities) {
+            if (other.implies(ineq)) stable.add(ineq);
+        }
+
+        if (stable.isEmpty()) return top();
+        return new TwoVariablesLinearInequality(stable);
+    }
+
     @Override
     public TwoVariablesLinearInequality top() {
         return TOP;
@@ -133,106 +184,125 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
         return !isBottom && inequalities.isEmpty();
     }
 
-    public boolean isBottom() {;
-        return  isBottom;
+    public boolean isBottom() {
+        return isBottom;
+    }
+
+    private boolean implies(Inequality ineq) {
+        for (Inequality existing : inequalities) {
+            if (existing.implies(ineq)) return true;
+        }
+        return false;
     }
 
     public static final class Inequality {
 
-    private final int a;
-    private final Identifier x;
-    private final int b;
-    private final Identifier y;
-    private final int c;
+        private final int a;
+        private final Identifier x;
+        private final int b;
+        private final Identifier y;
+        private final double c;
 
-    public Inequality(int a, Identifier x, int b, Identifier y, int c) {
-        if (x == null && y == null)
-            throw new IllegalArgumentException("At least one variable must be present");
-        if (a == 0 && x != null)
-            throw new IllegalArgumentException("Coefficient of x cannot be 0 if x is present");
-        if (b == 0 && y != null)
-            throw new IllegalArgumentException("Coefficient of y cannot be 0 if y is present");
+        public Inequality(int a, Identifier x, int b, Identifier y, double c) {
+            if (x == null && y == null)
+                throw new IllegalArgumentException("At least one variable must be present");
+            if (a == 0 && x != null)
+                throw new IllegalArgumentException("Coefficient of x cannot be 0 if x is present");
+            if (b == 0 && y != null)
+                throw new IllegalArgumentException("Coefficient of y cannot be 0 if y is present");
 
-        this.a = a;
-        this.x = x;
-        this.b = b;
-        this.y = y;
-        this.c = c;
+            this.a = a;
+            this.x = x;
+            this.b = b;
+            this.y = y;
+            this.c = c;
+        }
+
+        public int getA() {
+            return a;
+        }
+
+        public Identifier getX() {
+            return x;
+        }
+
+        public int getB() {
+            return b;
+        }
+
+        public Identifier getY() {
+            return y;
+        }
+
+        public double getC() {
+            return c;
+        }
+
+        public boolean involves(Identifier id) {
+            return (x != null && x.equals(id)) || (y != null && y.equals(id));
+        }
+
+        public boolean isUnary() {
+            return x == null || y == null;
+        }
+
+        public boolean isContradiction() {
+            return x == null && y == null && c < 0;
+        }
+
+        public boolean isTrivial() {
+            return x == null && y == null && c >= 0;
+        }
+
+        public Inequality without(Identifier id) {
+            if (x != null && x.equals(id))
+                return y == null ? null : new Inequality(b, y, 0, null, c);
+            if (y != null && y.equals(id))
+                return x == null ? null : new Inequality(a, x, 0, null, c);
+            return this;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj)
+                return true;
+            if (!(obj instanceof Inequality))
+                return false;
+            Inequality other = (Inequality) obj;
+            return a == other.a && b == other.b
+                    && Double.compare(c, other.c) == 0
+                    && java.util.Objects.equals(x, other.x)
+                    && java.util.Objects.equals(y, other.y);
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(a, x, b, y, c);
+        }
+
+        @Override
+        public String toString() {
+            String left;
+            if (x != null && y != null)
+                left = a + "*" + x + " + " + b + "*" + y;
+            else if (x != null)
+                left = a + "*" + x;
+            else
+                left = b + "*" + y;
+
+            return left + " <= " + c;
+        }
+
+        public boolean implies(Inequality other) {
+            return this.a == other.a && this.b == other.b
+                    && java.util.Objects.equals(this.x, other.x)
+                    && java.util.Objects.equals(this.y, other.y)
+                    && this.c <= other.c;
+        }
+
+        public String getKey() {
+            return a + "," + (x != null ? x.toString() : "null") + ","
+                    + b + "," + (y != null ? y.toString() : "null");
+        }
     }
-
-    public int getA() {
-        return a;
-    }
-
-    public Identifier getX() {
-        return x;
-    }
-
-    public int getB() {
-        return b;
-    }
-
-    public Identifier getY() {
-        return y;
-    }
-
-    public int getC() {
-        return c;
-    }
-
-    public boolean involves(Identifier id) {
-        return (x != null && x.equals(id)) || (y != null && y.equals(id));
-    }
-
-    public boolean isUnary() {
-        return x == null || y == null;
-    }
-
-    public boolean isContradiction() {
-        return x == null && y == null && c < 0;
-    }
-
-    public boolean isTrivial() {
-        return x == null && y == null && c >= 0;
-    }
-
-    public Inequality without(Identifier id) {
-        if (x != null && x.equals(id))
-            return y == null ? null : new Inequality(b, y, 0, null, c);
-        if (y != null && y.equals(id))
-            return x == null ? null : new Inequality(a, x, 0, null, c);
-        return this;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj)
-            return true;
-        if (!(obj instanceof Inequality))
-            return false;
-        Inequality other = (Inequality) obj;
-        return a == other.a && b == other.b && c == other.c
-                && java.util.Objects.equals(x, other.x)
-                && java.util.Objects.equals(y, other.y);
-    }
-
-    @Override
-    public int hashCode() {
-        return java.util.Objects.hash(a, x, b, y, c);
-    }
-
-    @Override
-    public String toString() {
-        String left;
-        if (x != null && y != null)
-            left = a + "*" + x + " + " + b + "*" + y;
-        else if (x != null)
-            left = a + "*" + x;
-        else
-            left = b + "*" + y;
-
-        return left + " <= " + c;
-    }
-}
-
 }
