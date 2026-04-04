@@ -1,8 +1,10 @@
 package it.unive.lisa.tutorial;
 
+import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import it.unive.lisa.analysis.Lattice;
 import it.unive.lisa.analysis.ScopeToken;
 import it.unive.lisa.analysis.SemanticException;
 import it.unive.lisa.analysis.SemanticOracle;
@@ -11,6 +13,7 @@ import it.unive.lisa.analysis.value.ValueDomain;
 import it.unive.lisa.program.cfg.ProgramPoint;
 import it.unive.lisa.symbolic.value.Identifier;
 import it.unive.lisa.symbolic.value.ValueExpression;
+import it.unive.lisa.util.representation.StringRepresentation;
 import it.unive.lisa.util.representation.StructuredRepresentation;
 
 public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLinearInequality> {
@@ -44,8 +47,7 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
     @Override
     public TwoVariablesLinearInequality smallStepSemantics(ValueExpression expression, ProgramPoint pp,
             SemanticOracle oracle) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'smallStepSemantics'");
+            return this;
     }
     @Override
     public TwoVariablesLinearInequality assume(ValueExpression expression, ProgramPoint src, ProgramPoint dest,
@@ -55,19 +57,35 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
     }
     @Override
     public boolean knowsIdentifier(Identifier id) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'knowsIdentifier'");
+        if (isTop() || isBottom()) return false;
+        for (Inequality ineq : inequalities) {
+            if (ineq.involves(id)) return true;
+        }
+        return false;
     }
     @Override
     public TwoVariablesLinearInequality forgetIdentifier(Identifier id) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'forgetIdentifier'");
+        if (isTop() || isBottom()) return this;
+        Set<Inequality> remaining = new HashSet<>();
+        for (Inequality ineq : inequalities) {
+            if (!ineq.involves(id)) remaining.add(ineq);
+        }
+        return new TwoVariablesLinearInequality(remaining);
     }
+
     @Override
     public TwoVariablesLinearInequality forgetIdentifiersIf(Predicate<Identifier> test) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'forgetIdentifiersIf'");
-    }
+        if (isTop() || isBottom()) return this;
+        Set<Inequality> remaining = new HashSet<>();
+        for (Inequality ineq : inequalities) {
+            boolean xMatches = ineq.getX() != null && test.test(ineq.getX());
+            boolean yMatches = ineq.getY() != null && test.test(ineq.getY());
+            if (!xMatches && !yMatches) {
+                remaining.add(ineq);
+            }
+        }
+        return new TwoVariablesLinearInequality(remaining);}
+
     @Override
     public Satisfiability satisfies(ValueExpression expression, ProgramPoint pp, SemanticOracle oracle)
             throws SemanticException {
@@ -76,18 +94,21 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
     }
     @Override
     public StructuredRepresentation representation() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'representation'");
+        if(isBottom)
+            return Lattice.bottomRepresentation();
+        if(isTop())
+            return Lattice.topRepresentation();
+        return new StringRepresentation(inequalities.toString());
     }
+
     @Override
     public TwoVariablesLinearInequality pushScope(ScopeToken token) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'pushScope'");
+        return this;
     }
+
     @Override
     public TwoVariablesLinearInequality popScope(ScopeToken token) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'popScope'");
+        return this;
     }
     @Override
     public boolean lessOrEqual(TwoVariablesLinearInequality other) throws SemanticException {
@@ -119,9 +140,9 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
     public static final class Inequality {
 
     private final int a;
-    private final Identifier x;   // can be null
+    private final Identifier x;
     private final int b;
-    private final Identifier y;   // can be null
+    private final Identifier y;
     private final int c;
 
     public Inequality(int a, Identifier x, int b, Identifier y, int c) {
