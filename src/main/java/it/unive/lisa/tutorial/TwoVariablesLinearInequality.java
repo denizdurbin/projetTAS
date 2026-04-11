@@ -13,8 +13,17 @@ import it.unive.lisa.analysis.SemanticOracle;
 import it.unive.lisa.analysis.lattices.Satisfiability;
 import it.unive.lisa.analysis.value.ValueDomain;
 import it.unive.lisa.program.cfg.ProgramPoint;
+import it.unive.lisa.symbolic.SymbolicExpression;
+import it.unive.lisa.symbolic.value.BinaryExpression;
+import it.unive.lisa.symbolic.value.Constant;
 import it.unive.lisa.symbolic.value.Identifier;
 import it.unive.lisa.symbolic.value.ValueExpression;
+import it.unive.lisa.symbolic.value.operator.AdditionOperator;
+import it.unive.lisa.symbolic.value.operator.SubtractionOperator;
+import it.unive.lisa.symbolic.value.operator.binary.ComparisonGe;
+import it.unive.lisa.symbolic.value.operator.binary.ComparisonGt;
+import it.unive.lisa.symbolic.value.operator.binary.ComparisonLe;
+import it.unive.lisa.symbolic.value.operator.binary.ComparisonLt;
 import it.unive.lisa.util.representation.StringRepresentation;
 import it.unive.lisa.util.representation.StructuredRepresentation;
 
@@ -42,21 +51,190 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
 
     @Override
     public TwoVariablesLinearInequality assign(Identifier id, ValueExpression expression, ProgramPoint pp,
-            SemanticOracle oracle) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'assign'");
+        SemanticOracle oracle) throws SemanticException {
+    if (isBottom()) return this;
+
+    if (expression instanceof Identifier && ((Identifier) expression).equals(id)) {
+        return this;
     }
+
+    if (expression instanceof BinaryExpression) {
+        BinaryExpression bin = (BinaryExpression) expression;
+        SymbolicExpression l = bin.getLeft();
+        SymbolicExpression r = bin.getRight();
+
+        if (bin.getOperator() instanceof AdditionOperator) {
+            Double delta = selfShiftDelta(id, l, r);
+            if (delta != null) return shift(id, delta);
+        } else if (bin.getOperator() instanceof SubtractionOperator) {
+            if (l instanceof Identifier && ((Identifier) l).equals(id) && r instanceof Constant) {
+                Double val = toDouble(((Constant) r).getValue());
+                if (val != null) return shift(id, -val);
+            } else if (l instanceof Constant && r instanceof Identifier && ((Identifier) r).equals(id)) {
+                Double val = toDouble(((Constant) l).getValue());
+                if (val != null) return reflect(id, val);
+            }
+        }
+    }
+
+    Set<Inequality> updated = new HashSet<>();
+    for (Inequality ineq : inequalities) {
+        if (!ineq.involves(id)) updated.add(ineq);
+    }
+
+    if (expression instanceof Constant) {
+        Double val = toDouble(((Constant) expression).getValue());
+        if (val != null) {
+            updated.add(new Inequality(1, id, 0, null, val));
+            updated.add(new Inequality(-1, id, 0, null, -val));
+        }
+    } else if (expression instanceof Identifier) {
+        Identifier y = (Identifier) expression;
+        updated.add(new Inequality(1, id, -1, y, 0));
+        updated.add(new Inequality(-1, id, 1, y, 0));
+    } else if (expression instanceof BinaryExpression) {
+        BinaryExpression bin = (BinaryExpression) expression;
+
+        if (bin.getOperator() instanceof AdditionOperator) {
+            if (bin.getLeft() instanceof Identifier && bin.getRight() instanceof Constant) {
+                Identifier y = (Identifier) bin.getLeft();
+                Double val = toDouble(((Constant) bin.getRight()).getValue());
+                if (val != null) {
+                    updated.add(new Inequality(1, id, -1, y, val));
+                    updated.add(new Inequality(-1, id, 1, y, -val));
+                }
+            } else if (bin.getLeft() instanceof Constant && bin.getRight() instanceof Identifier) {
+                Double val = toDouble(((Constant) bin.getLeft()).getValue());
+                Identifier y = (Identifier) bin.getRight();
+                if (val != null) {
+                    updated.add(new Inequality(1, id, -1, y, val));
+                    updated.add(new Inequality(-1, id, 1, y, -val));
+                }
+            }
+        } else if (bin.getOperator() instanceof SubtractionOperator) {
+            if (bin.getLeft() instanceof Identifier && bin.getRight() instanceof Constant) {
+                Identifier y = (Identifier) bin.getLeft();
+                Double val = toDouble(((Constant) bin.getRight()).getValue());
+                if (val != null) {
+                    updated.add(new Inequality(1, id, -1, y, -val));
+                    updated.add(new Inequality(-1, id, 1, y, val));
+                }
+            } else if (bin.getLeft() instanceof Constant && bin.getRight() instanceof Identifier) {
+                Double val = toDouble(((Constant) bin.getLeft()).getValue());
+                Identifier y = (Identifier) bin.getRight();
+                if (val != null) {
+                    updated.add(new Inequality(1, id, 1, y, val));
+                    updated.add(new Inequality(-1, id, -1, y, -val));
+                }
+            }
+        }
+    }
+
+    return new TwoVariablesLinearInequality(updated);
+}
+
+    private static Double selfShiftDelta(Identifier id, SymbolicExpression l, SymbolicExpression r) {
+        if (l instanceof Identifier && ((Identifier) l).equals(id) && r instanceof Constant)
+            return toDouble(((Constant) r).getValue());
+        if (r instanceof Identifier && ((Identifier) r).equals(id) && l instanceof Constant)
+            return toDouble(((Constant) l).getValue());
+        return null;
+    }
+
+    private TwoVariablesLinearInequality shift(Identifier id, double delta) {
+        Set<Inequality> updated = new HashSet<>();
+        for (Inequality ineq : inequalities) {
+            if (ineq.getX() != null && ineq.getX().equals(id)) {
+                updated.add(new Inequality(ineq.getA(), ineq.getX(), ineq.getB(), ineq.getY(),
+                        ineq.getC() + ineq.getA() * delta));
+            } else if (ineq.getY() != null && ineq.getY().equals(id)) {
+                updated.add(new Inequality(ineq.getA(), ineq.getX(), ineq.getB(), ineq.getY(),
+                        ineq.getC() + ineq.getB() * delta));
+            } else {
+                updated.add(ineq);
+            }
+        }
+        return new TwoVariablesLinearInequality(updated);
+    }
+
+    private TwoVariablesLinearInequality reflect(Identifier id, double c) {
+        Set<Inequality> updated = new HashSet<>();
+        for (Inequality ineq : inequalities) {
+            if (ineq.getX() != null && ineq.getX().equals(id)) {
+                updated.add(new Inequality(-ineq.getA(), ineq.getX(), ineq.getB(), ineq.getY(),
+                        ineq.getC() - ineq.getA() * c));
+            } else if (ineq.getY() != null && ineq.getY().equals(id)) {
+                updated.add(new Inequality(ineq.getA(), ineq.getX(), -ineq.getB(), ineq.getY(),
+                        ineq.getC() - ineq.getB() * c));
+            } else {
+                updated.add(ineq);
+            }
+        }
+        return new TwoVariablesLinearInequality(updated);
+    }
+
     @Override
     public TwoVariablesLinearInequality smallStepSemantics(ValueExpression expression, ProgramPoint pp,
             SemanticOracle oracle) throws SemanticException {
             return this;
     }
+
     @Override
     public TwoVariablesLinearInequality assume(ValueExpression expression, ProgramPoint src, ProgramPoint dest,
-            SemanticOracle oracle) throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'assume'");
+        SemanticOracle oracle) throws SemanticException {
+    if (isBottom()) return this;
+    if (!(expression instanceof BinaryExpression)) return this;
+
+    BinaryExpression bin = (BinaryExpression) expression;
+    SymbolicExpression left = bin.getLeft();
+    SymbolicExpression right = bin.getRight();
+    it.unive.lisa.symbolic.value.operator.binary.BinaryOperator operator = bin.getOperator();
+
+    Set<Inequality> updated = new HashSet<>(inequalities);
+
+    if (left instanceof Identifier && right instanceof Identifier) {
+        Identifier x = (Identifier) left;
+        Identifier y = (Identifier) right;
+
+        if (operator instanceof ComparisonLe || operator instanceof ComparisonLt) {
+            // x <= y  donc  x - y =< 0
+            // x < y   donc egalement x - y ≤ 0
+            updated.add(new Inequality(1, x, -1, y, 0));
+        } else if (operator instanceof ComparisonGe || operator instanceof ComparisonGt) {
+            // x >= y  donc  y - x =< 0
+            updated.add(new Inequality(-1, x, 1, y, 0));
+        }
+
+    } else if (left instanceof Identifier && right instanceof Constant) {
+        Identifier x = (Identifier) left;
+        Double val = toDouble(((Constant) right).getValue());
+        if (val != null) {
+            if (operator instanceof ComparisonLe || operator instanceof ComparisonLt) {
+                // x <= c  donc  x =< c
+                updated.add(new Inequality(1, x, 0, null, val));
+            } else if (operator instanceof ComparisonGe || operator instanceof ComparisonGt) {
+                // x >= c  donc  -x =< -c
+                updated.add(new Inequality(-1, x, 0, null, -val));
+            }
+        }
+
+    } else if (left instanceof Constant && right instanceof Identifier) {
+        Identifier y = (Identifier) right;
+        Double val = toDouble(((Constant) left).getValue());
+        if (val != null) {
+            if (operator instanceof ComparisonLe || operator instanceof ComparisonLt) {
+                // c <= y  donc  -y =< -c
+                updated.add(new Inequality(-1, y, 0, null, -val));
+            } else if (operator instanceof ComparisonGe || operator instanceof ComparisonGt) {
+                // c >= y  donc  y =< c
+                updated.add(new Inequality(1, y, 0, null, val));
+            }
+        }
     }
+
+    return new TwoVariablesLinearInequality(updated);
+}
+
     @Override
     public boolean knowsIdentifier(Identifier id) {
         if (isTop() || isBottom()) return false;
@@ -91,10 +269,47 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
 
     @Override
     public Satisfiability satisfies(ValueExpression expression, ProgramPoint pp, SemanticOracle oracle)
-            throws SemanticException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'satisfies'");
+        throws SemanticException {
+    if (isBottom()) return Satisfiability.BOTTOM;
+    if (isTop()) return Satisfiability.UNKNOWN;
+    if (!(expression instanceof BinaryExpression)) return Satisfiability.UNKNOWN;
+
+    BinaryExpression bin = (BinaryExpression) expression;
+    SymbolicExpression left = bin.getLeft();
+    SymbolicExpression right = bin.getRight();
+    it.unive.lisa.symbolic.value.operator.binary.BinaryOperator operator = bin.getOperator();
+
+    Inequality target = null;
+
+    if (left instanceof Identifier && right instanceof Identifier) {
+        Identifier x = (Identifier) left;
+        Identifier y = (Identifier) right;
+
+        if (operator instanceof ComparisonLe || operator instanceof ComparisonLt) {
+            target = new Inequality(1, x, -1, y, 0);
+        } else if (operator instanceof ComparisonGe || operator instanceof ComparisonGt) {
+            target = new Inequality(-1, x, 1, y, 0);
+        }
+
+    } else if (left instanceof Identifier && right instanceof Constant) {
+        Identifier x = (Identifier) left;
+        Double val = toDouble(((Constant) right).getValue());
+        if (val != null) {
+            if (operator instanceof ComparisonLe || operator instanceof ComparisonLt) {
+                target = new Inequality(1, x, 0, null, val);
+            } else if (operator instanceof ComparisonGe || operator instanceof ComparisonGt) {
+                target = new Inequality(-1, x, 0, null, -val);
+            }
+        }
     }
+
+    if (target != null && implies(target)) {
+        return Satisfiability.SATISFIED;
+    }
+
+    return Satisfiability.UNKNOWN;
+}
+
     @Override
     public StructuredRepresentation representation() {
         if(isBottom)
@@ -103,7 +318,7 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
             return Lattice.topRepresentation();
         return new StringRepresentation(inequalities.toString());
     }
-
+    
     @Override
     public TwoVariablesLinearInequality pushScope(ScopeToken token) throws SemanticException {
         return this;
@@ -195,12 +410,18 @@ public class TwoVariablesLinearInequality implements ValueDomain<TwoVariablesLin
         return false;
     }
 
+    private static Double toDouble(Object value) {
+    if (value instanceof Integer) return ((Integer) value).doubleValue();
+    if (value instanceof Float) return ((Float) value).doubleValue();
+    if (value instanceof Double) return (Double) value;
+    return null;}
+
     public static final class Inequality {
 
         private final int a;
-        private final Identifier x;
+        private final Identifier x;   
         private final int b;
-        private final Identifier y;
+        private final Identifier y;  
         private final double c;
 
         public Inequality(int a, Identifier x, int b, Identifier y, double c) {

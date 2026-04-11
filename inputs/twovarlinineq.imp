@@ -1,0 +1,41 @@
+class twovarineq {
+
+    assignment_relation() {
+        def x = 0;
+        def y = x;
+        def z = x + 1;
+    }
+
+    subtraction() {
+        def x = 10;
+        def y = x - 3;
+        def z = y - 2;
+    }
+
+    relational_chain() {
+        def a = 0;
+        def b = a + 1;
+        def c = b + 1;
+    }
+
+    branch_le() {
+        def x = 5;
+        def y = 10;
+        if (x <= y)
+            x = y;
+    }
+
+    branch_with_constant() {
+        def x = 0;
+        if (x <= 10)
+            x = x + 1;
+    }
+
+    loop_counter() {
+        def i = 0;
+        def n = 10;
+        while (i < n) {
+            i = i + 1;
+        }
+    }
+}
