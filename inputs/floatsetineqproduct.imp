@@ -1,0 +1,35 @@
+class floatsetineqproduct {
+
+    basic() {
+        def x = 1.0;
+        def y = x + 2.0;
+        def z = y - x;
+    }
+
+    branch(cond) {
+        def x = 1.0;
+        def y = 10.0;
+        if (cond > 0)
+            x = 2.0;
+        else
+            x = 3.0;
+        if (x <= y)
+            y = x;
+    }
+
+    loop_counter() {
+        def i = 0;
+        def n = 10;
+        while (i < n) {
+            i = i + 1;
+        }
+    }
+
+    set_overflow() {
+        def a = 1.0;
+        def b = 2.0;
+        def c = 3.0;
+        def d = 4.0;
+        def e = a + b;
+    }
+}
